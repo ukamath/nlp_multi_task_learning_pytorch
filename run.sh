@@ -28,11 +28,26 @@ python main.py --data './data' \
         --log_interval 20 \
         --save './result/chunk_model'
 
+echo "NER"
+python main.py --data './data' \
+        --emsize 256 \
+        --npos_layers 0 \
+        --nchunk_layers 2 \
+        --nhid 128 \
+        --batch_size 128 \
+        --seq_len 10 \
+        --cuda \
+        --train_mode 'NER' \
+        --epochs 300 \
+        --log_interval 20 \
+        --save './result/ner_model'
+
 echo "Joint Training on the same level"
 python main.py --data './data' \
         --emsize 256 \
         --npos_layers 2 \
         --nchunk_layers 2 \
+        --nner_layers 2 \
         --nhid 128 \
         --batch_size 128 \
         --seq_len 10 \
@@ -47,6 +62,7 @@ python main.py --data './data' \
         --emsize 256 \
         --npos_layers 1 \
         --nchunk_layers 2 \
+        --nner_layers 3 \
         --nhid 128 \
         --batch_size 128 \
         --seq_len 10 \

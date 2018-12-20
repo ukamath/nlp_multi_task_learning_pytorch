@@ -72,6 +72,7 @@ class JointModel(nn.Module):
        For args to specified the detail of training, include the task
        output and which layer we put it in. Number of tag first and 
        then number of layer."""
+
     def __init__(self, ntoken, emsize, nhid, *args,
                  dropout=0.2, rnn_type='LSTM', bi=False, train_mode='Joint'):
         super().__init__()
@@ -88,31 +89,47 @@ class JointModel(nn.Module):
             self.nlayers1 = args[1]
             self.ntags2 = args[2]
             self.nlayers2 = args[3]
-            if self.nlayers1 == self.nlayers2:
-                self.rnn = EncoderModel(ntoken, emsize, nhid, self.nlayers1, 
+            self.ntags3 = args[4]
+            self.nlayers3 = args[5]
+            if self.nlayers1 == self.nlayers2 == self.nlayers3:
+                self.rnn = EncoderModel(ntoken, emsize, nhid, self.nlayers1,
                                         dropout, rnn_type, bi)
             else:
                 # Lower layer
-                self.rnn1 = EncoderModel(ntoken, emsize, nhid, self.nlayers1, 
+                self.rnn1 = EncoderModel(ntoken, emsize, nhid, self.nlayers1,
                                          dropout, rnn_type, bi)
-                # Higher layer
+                # Higher layer 1
                 if rnn_type == 'LSTM':
-                    self.rnn2 = nn.LSTM(nhid*(1+int(bi)), nhid, 
-                                        self.nlayers2 - self.nlayers1, 
+                    self.rnn2 = nn.LSTM(nhid * (1 + int(bi)), nhid,
+                                        self.nlayers2 - self.nlayers1,
                                         bidirectional=bi)
                 elif rnn_type == 'GRU':
-                    self.rnn2 = nn.GRU(nhid*(1+int(bi)), nhid, 
-                                       self.nlayers2 - self.nlayers1, 
+                    self.rnn2 = nn.GRU(nhid * (1 + int(bi)), nhid,
+                                       self.nlayers2 - self.nlayers1,
                                        bidirectional=bi)
                 else:
-                    self.rnn2 = nn.RNN(nhid*(1+int(bi)), nhid, 
-                                       self.nlayers2 - self.nlayers1, 
+                    self.rnn2 = nn.RNN(nhid * (1 + int(bi)), nhid,
+                                       self.nlayers2 - self.nlayers1,
+                                       bidirectional=bi)
+                # Higher layer 2
+                if rnn_type == 'LSTM':
+                    self.rnn3 = nn.LSTM(nhid * (1 + int(bi)), nhid,
+                                        self.nlayers3 - self.nlayers2,
+                                        bidirectional=bi)
+                elif rnn_type == 'GRU':
+                    self.rnn3 = nn.GRU(nhid * (1 + int(bi)), nhid,
+                                       self.nlayers3 - self.nlayers2,
+                                       bidirectional=bi)
+                else:
+                    self.rnn3 = nn.RNN(nhid * (1 + int(bi)), nhid,
+                                       self.nlayers3 - self.nlayers2,
                                        bidirectional=bi)
 
             # Decoders for two tasks
             self.linear1 = LinearDecoder(nhid, self.ntags1, bi)
             self.linear2 = LinearDecoder(nhid, self.ntags2, bi)
-            
+            self.linear3 = LinearDecoder(nhid, self.ntags3, bi)
+
         else:
             self.ntags = args[0]
             self.nlayers = args[1]
@@ -122,18 +139,22 @@ class JointModel(nn.Module):
         
     def forward(self, input, *hidden):
         if self.train_mode == 'Joint':
-            if self.nlayers1 == self.nlayers2:
+            if self.nlayers1 == self.nlayers2 == self.nlayers3:
                 logits, hidden = self.rnn(input, hidden[0])
                 outputs1 = self.linear1(logits)
                 outputs2 = self.linear2(logits)
-                return outputs1, outputs2, hidden
+                outputs3 = self.linear3(logits)
+                return outputs1, outputs2, outputs3, hidden
             else:
                 logits1, hidden1 = self.rnn1(input, hidden[0])
                 self.rnn2.flatten_parameters()
                 logits2, hidden2 = self.rnn2(logits1, hidden[1])
+                self.rnn3.flatten_parameters()
+                logits3, hidden3 = self.rnn3(logits2, hidden[2])
                 outputs1 = self.linear1(logits1)
                 outputs2 = self.linear2(logits2)
-                return outputs1, outputs2, hidden1, hidden2
+                outputs3 = self.linear3(logits3)
+                return outputs1, outputs2, outputs3, hidden1, hidden2, hidden3
         else:
             logits, hidden = self.rnn(input, hidden[0])            
             outputs = self.linear(logits)
@@ -145,4 +166,10 @@ class JointModel(nn.Module):
                                     batch_size, self.nhid).zero_()),
                 Variable(weight.new((self.nlayers2 - self.nlayers1)*(1+int(self.bi)), 
                                     batch_size, self.nhid).zero_()))
-        
+
+    def init_rnn3_hidden(self, batch_size):
+        weight = next(self.rnn3.parameters()).data
+        return (Variable(weight.new((self.nlayers3 - self.nlayers2) * (1 + int(self.bi)),
+                                    batch_size, self.nhid).zero_()),
+                Variable(weight.new((self.nlayers3 - self.nlayers2) * (1 + int(self.bi)),
+                                    batch_size, self.nhid).zero_()))
